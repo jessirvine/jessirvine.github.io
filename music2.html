@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spotify Web Player</title>
+  <script src="https://sdk.scdn.co/spotify-player.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+    input, button { margin: 5px; padding: 10px; }
+  </style>
+</head>
+<body>
+
+<h1>Spotify Web Player</h1>
+
+<input type="text" id="trackUri" placeholder="Enter Spotify Track URI" size="40" />
+<br/>
+<button id="playBtn">Play</button>
+<button id="pauseBtn">Pause</button>
+<button id="nextBtn">Next</button>
+<button id="prevBtn">Previous</button>
+
+<script>
+  // Replace with your Spotify OAuth token
+  const token = "BQD7pC6VlUTEHMvTVYcXRuZ82mQ16--18C4VErcR2Wf5wPuahdVXb6Q7Cqp5EeuabmIAsknj0zOM3MZ3c8mmIRWH_O3wrVP9du4zrZSMESh_ZB_HzWMn-3qCU4WxN2hl4inOt-Af1eA"; 
+
+  let player;
+  let deviceId;
+
+  window.onSpotifyWebPlaybackSDKReady = () => {
+    player = new Spotify.Player({
+      name: "My Web Player",
+      getOAuthToken: cb => { cb(token); },
+      volume: 0.8
+    });
+
+    // When the player is ready, Spotify returns the device ID
+    player.addListener('ready', ({ device_id }) => {
+      console.log('Device ID is', device_id);
+      deviceId = device_id;
+    });
+
+    player.addListener('not_ready', ({ device_id }) => {
+      console.log('Device ID has gone offline', device_id);
+    });
+
+    player.addListener('player_state_changed', state => {
+      console.log('Player state changed:', state);
+    });
+
+    player.connect();
+  };
+
+  // Play track function
+  async function playTrack(uri) {
+    if (!deviceId) {
+      alert("Player not ready yet!");
+      return;
+    }
+
+    await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+      method: "PUT",
+      body: JSON.stringify({ uris: [uri] }),
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+    });
+  }
+
+  // Button event handlers
+  document.getElementById('playBtn').addEventListener('click', () => {
+    const uri = document.getElementById('trackUri').value.trim();
+    if(uri) playTrack(uri);
+  });
+
+  document.getElementById('pauseBtn').addEventListener('click', () => player.pause());
+  document.getElementById('nextBtn').addEventListener('click', () => player.nextTrack());
+  document.getElementById('prevBtn').addEventListener('click', () => player.previousTrack());
+</script>
+
+</body>
+</html>

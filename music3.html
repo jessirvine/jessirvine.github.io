@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spotify Web Player with Login</title>
+  <script src="https://sdk.scdn.co/spotify-player.js"></script>
+  <style>
+    body { font-family: Arial; text-align: center; margin-top: 50px; }
+    button, input { margin: 5px; padding: 10px; }
+  </style>
+</head>
+<body>
+
+<h1>Spotify Web Player</h1>
+
+<button id="loginBtn">Login with Spotify</button>
+<br/>
+<input type="text" id="trackUri" placeholder="Enter Spotify Track URI" size="40" />
+<br/>
+<button id="playBtn">Play</button>
+<button id="pauseBtn">Pause</button>
+<button id="nextBtn">Next</button>
+<button id="prevBtn">Previous</button>
+
+<script>
+const clientId = "96dfb09f18834bb68197e5749f7623b6"; 
+const redirectUri = window.location.origin + window.location.pathname;
+const scopes = "streaming user-read-email user-read-private user-modify-playback-state";
+
+let accessToken = null;
+let deviceId;
+let player;
+
+// PKCE helper functions
+async function generateCodeChallenge(codeVerifier) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(codeVerifier);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function generateRandomString(length) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let text = "";
+  for(let i=0;i<length;i++) text += chars.charAt(Math.floor(Math.random()*chars.length));
+  return text;
+}
+
+// Login button
+document.getElementById("loginBtn").addEventListener("click", async () => {
+  const codeVerifier = generateRandomString(128);
+  localStorage.setItem("code_verifier", codeVerifier);
+  const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+  const authUrl = `https://accounts.spotify.com/authorize?response_type=code&client_id=${clientId}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}&code_challenge_method=S256&code_challenge=${codeChallenge}`;
+  window.location = authUrl;
+});
+
+// Handle redirect with code
+async function handleRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
+  if(!code) return;
+
+  const codeVerifier = localStorage.getItem("code_verifier");
+
+  // Exchange code for token via Node server
+  const tokenResp = await fetch(`http://localhost:3000/get_token?code=${code}&code_verifier=${codeVerifier}&redirect_uri=${encodeURIComponent(redirectUri)}`);
+  const data = await tokenResp.json();
+  accessToken = data.access_token;
+
+  // Remove code from URL
+  window.history.replaceState({}, document.title, redirectUri);
+
+  // Initialize player now that we have the token
+  initPlayer();
+}
+
+handleRedirect();
+
+// Initialize Web Playback SDK
+function initPlayer() {
+  if(!accessToken) return;
+
+  player = new Spotify.Player({
+    name: "My Web Player",
+    getOAuthToken: cb => { cb(accessToken); },
+    volume: 0.8
+  });
+
+  player.addListener('ready', ({ device_id }) => {
+    console.log('Device ID:', device_id);
+    deviceId = device_id;
+  });
+
+  player.addListener('player_state_changed', state => console.log('Player state:', state));
+  player.connect();
+}
+
+// Playback controls
+async function playTrack(uri) {
+  if(!deviceId || !accessToken) return;
+  await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+    method: "PUT",
+    body: JSON.stringify({ uris: [uri] }),
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${accessToken}` }
+  });
+}
+
+document.getElementById('playBtn').addEventListener('click', () => {
+  const uri = document.getElementById('trackUri').value.trim();
+  if(uri) playTrack(uri);
+});
+document.getElementById('pauseBtn').addEventListener('click', () => player.pause());
+document.getElementById('nextBtn').addEventListener('click', () => player.nextTrack());
+document.getElementById('prevBtn').addEventListener('click', () => player.previousTrack());
+</script>
+
+</body>
+</html>
